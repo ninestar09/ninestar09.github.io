@@ -3,3 +3,10 @@ body {
     background: black;
     text-align: center;
 }
+
+head{
+    color: white;
+}
+p{
+    color: lightgrey;
+}

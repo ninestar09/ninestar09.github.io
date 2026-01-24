@@ -21,7 +21,18 @@ class SatelliteViewer {
         this.connectionMarker = null; // Filled circle marker at the start of the line
         this.selectedObject = null; // Store the selected object for real-time updates
         this.selectedIntersectionPoint = null; // Store intersection point in local coordinates
-        this.clickTimeout = null; // Timeout for click detection
+        this.defaultCameraPosition = new THREE.Vector3(0, 0, -5);
+        this.defaultControlsTarget = new THREE.Vector3(0, 0, 0);
+        this.cameraDebugContent = null;
+        this.indicatorLineReady = true;
+        this.assetBasePath = new URL('.', import.meta.url);
+        
+        // Available model files in the directory
+        this.availableModels = [
+            this.resolveAssetPath('assets/models/Artemis2_Orion01.gltf'),
+            this.resolveAssetPath('assets/models/Artemis2_Orion02.glb')
+        ];
+        this.defaultModel = this.resolveAssetPath('assets/models/Artemis2_Orion01.gltf'); // Default model to load
         
         // Lighting references
         this.ambientLight = null;
@@ -54,6 +65,10 @@ class SatelliteViewer {
         this.animate();
     }
 
+    resolveAssetPath(relativePath) {
+        return new URL(relativePath, this.assetBasePath).toString();
+    }
+
     init() {
         // Create scene
         this.scene = new THREE.Scene();
@@ -62,25 +77,15 @@ class SatelliteViewer {
         // Add stars background
         this.addStarField();
         
-        const container = document.getElementById('canvas-container');
-        if (!container) {
-            console.error('Canvas container not found!');
-            return;
-        }
-        
-        // Get container dimensions
-        const containerWidth = container.clientWidth || container.offsetWidth || window.innerWidth;
-        const containerHeight = container.clientHeight || container.offsetHeight || window.innerHeight;
-        
         // Create camera
-        const aspect = containerWidth / containerHeight;
+        const aspect = window.innerWidth / window.innerHeight;
         this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
         // Position camera on the opposite side to fix viewing angle
         this.camera.position.set(0, 0, -5);
         
         // Create renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(containerWidth, containerHeight);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -90,7 +95,10 @@ class SatelliteViewer {
         this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
         this.pmremGenerator.compileEquirectangularShader();
         
+        const container = document.getElementById('canvas-container');
         container.appendChild(this.renderer.domElement);
+
+        this.cameraDebugContent = document.getElementById('camera-debug-content');
         
         // Add lights
         this.setupLights();
@@ -110,10 +118,7 @@ class SatelliteViewer {
         this.loadModel();
         
         // Handle window resize
-        window.addEventListener('resize', () => {
-            this.onWindowResize();
-            this.updatePanelHeight();
-        });
+        window.addEventListener('resize', () => this.onWindowResize());
     }
 
     addStarField() {
@@ -239,7 +244,7 @@ class SatelliteViewer {
             'Panel_04-Solar_Panel_Cell_Material_UV'
         ];
         
-        const texturePath = 'assets/images/Solar_Panel_Mask_Texture.png';
+        const texturePath = this.resolveAssetPath('assets/images/Solar_Panel_Mask_Texture.png');
         const textureLoader = new THREE.TextureLoader();
         
         // Traverse the model to find materials with matching names
@@ -415,22 +420,10 @@ class SatelliteViewer {
     }
 
     createGLTFLoader() {
+        const loader = new GLTFLoader();
+        
         // Set up a loading manager to track texture loading
         const manager = new THREE.LoadingManager();
-        
-        // Set the base path for loading resources
-        manager.setURLModifier((url) => {
-            // If the URL is already absolute or starts with http, return as is
-            if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-                return url;
-            }
-            // If the URL is relative and starts with assets/, prepend 3D_WEB_VIEW/
-            if (url.startsWith('assets/')) {
-                return '3D_WEB_VIEW/' + url;
-            }
-            // For other relative paths, try to resolve them relative to the model location
-            return url;
-        });
         
         manager.onLoad = () => {
             console.log('All resources loaded successfully');
@@ -445,8 +438,6 @@ class SatelliteViewer {
         manager.onError = (url) => {
             console.warn('Error loading resource:', url);
         };
-        
-        const loader = new GLTFLoader(manager);
         
         // GLTFLoader uses its own internal texture loading, but we can set a manager
         // The textures will be configured after loading in processGLTFTextures
@@ -485,6 +476,22 @@ class SatelliteViewer {
         }
     }
 
+    populateModelDropdown(menuElement) {
+        // Clear existing options
+        menuElement.innerHTML = '';
+        
+        // Add options for each available model
+        this.availableModels.forEach(modelPath => {
+            const button = document.createElement('button');
+            button.className = 'replace-model-option';
+            button.setAttribute('data-model', modelPath);
+            // Extract filename from path for display
+            const filename = modelPath.split('/').pop();
+            button.textContent = filename;
+            menuElement.appendChild(button);
+        });
+    }
+
     loadModel() {
         const loader = this.createGLTFLoader();
         
@@ -492,7 +499,7 @@ class SatelliteViewer {
         this.showLoadingIndicator();
         
         loader.load(
-            '3D_WEB_VIEW/assets/models/NASA_Orion_GLTF_TEST1A.gltf',
+            this.defaultModel,
             (gltf) => {
                 this.satellite = gltf.scene;
                 
@@ -546,13 +553,12 @@ class SatelliteViewer {
                 const maxSize = Math.max(newSize.x, newSize.y, newSize.z);
                 this.camera.position.set(0, 0, -maxSize * 0.8);
                 this.controls.update();
+        this.setDefaultViewFromCamera();
                 
                 // Hide loading indicator after model is fully loaded
                 this.updateLoadingProgress(100);
                 setTimeout(() => {
                     this.hideLoadingIndicator();
-                    // Update panel height after model loads to ensure correct dimensions
-                    this.updatePanelHeight();
                 }, 300);
                 
                 console.log('Model loaded successfully');
@@ -679,6 +685,7 @@ class SatelliteViewer {
                 const maxSize = Math.max(newSize.x, newSize.y, newSize.z);
                 this.camera.position.set(0, 0, -maxSize * 0.8);
                 this.controls.update();
+        this.setDefaultViewFromCamera();
                 
                 // Hide loading indicator after model is fully loaded
                 this.updateLoadingProgress(100);
@@ -784,21 +791,27 @@ class SatelliteViewer {
     }
 
     setupEventListeners() {
-        // Mouse double-click event
-        this.renderer.domElement.addEventListener('dblclick', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.onMouseDoubleClick(event);
+        // Mouse click event for debugging
+        this.renderer.domElement.addEventListener('click', (event) => {
+            const mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            const mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            console.log('=== SINGLE CLICK DEBUG ===');
+            console.log('Mouse Screen Position:', { x: event.clientX, y: event.clientY });
+            console.log('Mouse NDC:', { x: mouseX.toFixed(3), y: mouseY.toFixed(3) });
+            console.log('Camera Position:', {
+                x: this.camera.position.x.toFixed(3),
+                y: this.camera.position.y.toFixed(3),
+                z: this.camera.position.z.toFixed(3)
+            });
+            console.log('Camera Target:', {
+                x: this.controls.target.x.toFixed(3),
+                y: this.controls.target.y.toFixed(3),
+                z: this.controls.target.z.toFixed(3)
+            });
         });
         
-        // Also handle single click for compatibility
-        this.renderer.domElement.addEventListener('click', (event) => {
-            // Only handle if it's not a double-click (delay check)
-            clearTimeout(this.clickTimeout);
-            this.clickTimeout = setTimeout(() => {
-                // This is a single click, not a double-click
-            }, 300);
-        });
+        // Mouse double-click event
+        this.renderer.domElement.addEventListener('dblclick', (event) => this.onMouseDoubleClick(event));
         
         // Close indicator button
         const closeButton = document.getElementById('close-indicator');
@@ -811,26 +824,29 @@ class SatelliteViewer {
             }
         });
         
-        // Load model button
+        // Load model button (disabled and hidden)
         const loadModelButton = document.getElementById('load-model-button');
         const modelFileInput = document.getElementById('model-file-input');
         
-        loadModelButton.addEventListener('click', () => {
-            modelFileInput.click();
-        });
+        // Disable load model button functionality (button is hidden in HTML)
+        // loadModelButton.addEventListener('click', () => {
+        //     modelFileInput.click();
+        // });
         
-        modelFileInput.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (file) {
-                this.loadModelFromFile(file);
-            }
-        });
+        // modelFileInput.addEventListener('change', (event) => {
+        //     const file = event.target.files[0];
+        //     if (file) {
+        //         this.loadModelFromFile(file);
+        //     }
+        // });
         
         
-        // Replace model dropdown
+        // Replace model dropdown - populate dynamically
         const replaceModelButton = document.getElementById('replace-model-button');
         const replaceModelMenu = document.getElementById('replace-model-menu');
-        const replaceModelOptions = document.querySelectorAll('.replace-model-option');
+        
+        // Populate dropdown with available models
+        this.populateModelDropdown(replaceModelMenu);
         
         // Toggle dropdown menu
         replaceModelButton.addEventListener('click', (e) => {
@@ -845,14 +861,14 @@ class SatelliteViewer {
             }
         });
         
-        // Handle model selection
-        replaceModelOptions.forEach(option => {
-            option.addEventListener('click', (e) => {
+        // Handle model selection (using event delegation for dynamically added buttons)
+        replaceModelMenu.addEventListener('click', (e) => {
+            if (e.target.classList.contains('replace-model-option')) {
                 e.stopPropagation();
-                const modelPath = option.getAttribute('data-model');
+                const modelPath = e.target.getAttribute('data-model');
                 this.loadModelByPath(modelPath);
                 replaceModelMenu.classList.add('hidden');
-            });
+            }
         });
         
         // Right panel toggle
@@ -869,20 +885,18 @@ class SatelliteViewer {
         // Preset buttons
         const presetButtons = document.getElementById('preset-buttons');
         const presetButtonElements = document.querySelectorAll('.preset-button');
+        const homePresetButton = document.querySelector('.preset-button[data-action="home"]');
         
-        // Hide panel on initial load (collapsed by default)
+        // Hide panel on initial load
         if (rightPanel) {
             rightPanel.classList.add('collapsed');
             if (rightPanelToggle) {
                 rightPanelToggle.textContent = '◄';
                 rightPanelToggle.classList.add('panel-collapsed');
-                // Ensure button is visible
-                rightPanelToggle.style.display = 'flex';
-                rightPanelToggle.style.visibility = 'visible';
-                rightPanelToggle.style.opacity = '1';
             }
             // Show preset buttons when panel is collapsed
             if (presetButtons) presetButtons.classList.remove('hidden');
+            if (homePresetButton) homePresetButton.classList.add('active');
         }
         
         // Function to toggle panel
@@ -895,6 +909,10 @@ class SatelliteViewer {
                 rightPanelToggle.classList.add('panel-collapsed');
                 // Show preset buttons when panel is collapsed
                 if (presetButtons) presetButtons.classList.remove('hidden');
+                if (homePresetButton) {
+                    presetButtonElements.forEach(btn => btn.classList.remove('active'));
+                    homePresetButton.classList.add('active');
+                }
             } else {
                 rightPanelToggle.classList.remove('panel-collapsed');
                 // Hide preset buttons when panel is open
@@ -923,16 +941,34 @@ class SatelliteViewer {
         // Handle preset button clicks
         presetButtonElements.forEach(button => {
             button.addEventListener('click', (e) => {
+                const action = button.getAttribute('data-action');
+                if (action === 'home') {
+                    this.resetToDefaultView();
+                    this.resetPartPreset();
+                    presetButtonElements.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    return;
+                }
+
                 const partName = button.getAttribute('data-part');
+                if (!partName) return;
                 
                 // Toggle: if already active, reset; otherwise show preset
                 if (button.classList.contains('active') && this.currentPreset === partName) {
                     this.resetPartPreset();
                     button.classList.remove('active');
                 } else {
-                    this.showPartPreset(partName);
-                    presetButtonElements.forEach(btn => btn.classList.remove('active'));
-                    button.classList.add('active');
+                    const didFade = this.fadeOutIndicator();
+                    const triggerPreset = () => {
+                        this.showPartPreset(partName);
+                        presetButtonElements.forEach(btn => btn.classList.remove('active'));
+                        button.classList.add('active');
+                    };
+                    if (didFade) {
+                        setTimeout(triggerPreset, 300);
+                    } else {
+                        triggerPreset();
+                    }
                 }
             });
         });
@@ -988,7 +1024,39 @@ class SatelliteViewer {
             outlinerPanel.classList.toggle('collapsed');
         });
         
-        // Settings panel removed - no longer needed
+        // Settings panel toggle
+        const settingsPanel = document.getElementById('settings-panel');
+        const settingsPanelHeader = settingsPanel.querySelector('.panel-header');
+        const settingsPanelToggle = document.getElementById('settings-panel-toggle');
+        settingsPanelHeader.addEventListener('click', (e) => {
+            if (e.target !== settingsPanelToggle) {
+                settingsPanel.classList.toggle('collapsed');
+            }
+        });
+        settingsPanelToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            settingsPanel.classList.toggle('collapsed');
+        });
+        
+        // Settings buttons
+        const saveSettingsButton = document.getElementById('save-settings-button');
+        const loadSettingsButton = document.getElementById('load-settings-button');
+        const resetSettingsButton = document.getElementById('reset-settings-button');
+        const settingsFileInput = document.getElementById('settings-file-input');
+        
+        saveSettingsButton.addEventListener('click', () => this.saveSettings());
+        loadSettingsButton.addEventListener('click', () => {
+            settingsFileInput.click();
+        });
+        settingsFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.loadSettingsFromFile(file);
+            }
+            // Reset input so same file can be selected again
+            e.target.value = '';
+        });
+        resetSettingsButton.addEventListener('click', () => this.resetSettings());
         
         // Setup lighting controls
         this.setupLightingControls();
@@ -1033,6 +1101,7 @@ class SatelliteViewer {
             loadPanelCollapsed: document.getElementById('load-panel').classList.contains('collapsed'),
             lightingPanelCollapsed: document.getElementById('lighting-panel').classList.contains('collapsed'),
             outlinerPanelCollapsed: document.getElementById('outliner-panel').classList.contains('collapsed'),
+            settingsPanelCollapsed: document.getElementById('settings-panel').classList.contains('collapsed'),
             rightPanelCollapsed: document.getElementById('right-panel').classList.contains('collapsed')
         };
         
@@ -1208,7 +1277,13 @@ class SatelliteViewer {
                 document.getElementById('outliner-panel').classList.remove('collapsed');
             }
         }
-        // Settings panel removed - no longer needed
+        if (settings.settingsPanelCollapsed !== undefined) {
+            if (settings.settingsPanelCollapsed) {
+                document.getElementById('settings-panel').classList.add('collapsed');
+            } else {
+                document.getElementById('settings-panel').classList.remove('collapsed');
+            }
+        }
         if (settings.rightPanelCollapsed !== undefined) {
             const rightPanel = document.getElementById('right-panel');
             const rightPanelToggle = document.getElementById('right-panel-toggle');
@@ -1476,8 +1551,14 @@ class SatelliteViewer {
                     document.getElementById('outliner-panel').classList.remove('collapsed');
                 }
             }
-        // Settings panel removed
-        if (settings.rightPanelCollapsed !== undefined) {
+            if (settings.settingsPanelCollapsed !== undefined) {
+                if (settings.settingsPanelCollapsed) {
+                    document.getElementById('settings-panel').classList.add('collapsed');
+                } else {
+                    document.getElementById('settings-panel').classList.remove('collapsed');
+                }
+            }
+            if (settings.rightPanelCollapsed !== undefined) {
                 const rightPanel = document.getElementById('right-panel');
                 const rightPanelToggle = document.getElementById('right-panel-toggle');
                 if (settings.rightPanelCollapsed) {
@@ -1703,7 +1784,7 @@ class SatelliteViewer {
                 document.getElementById('load-panel').classList.remove('collapsed');
                 document.getElementById('lighting-panel').classList.remove('collapsed');
                 document.getElementById('outliner-panel').classList.remove('collapsed');
-                // Settings panel removed
+                document.getElementById('settings-panel').classList.remove('collapsed');
                 const rightPanel = document.getElementById('right-panel');
                 const rightPanelToggle = document.getElementById('right-panel-toggle');
                 rightPanel.classList.remove('collapsed');
@@ -1994,7 +2075,7 @@ class SatelliteViewer {
     }
     
     loadDefaultHDRI() {
-        this.loadHDRIFromPath('3D_WEB_VIEW/assets/hdri/Bevel_Reflection.exr');
+        this.loadHDRIFromPath(this.resolveAssetPath('assets/hdri/Bevel_Reflection.exr'));
     }
     
     loadHDRI(file) {
@@ -2775,21 +2856,24 @@ class SatelliteViewer {
     }
 
     onMouseDoubleClick(event) {
-        // Get canvas container for accurate coordinate calculation
-        const container = document.getElementById('canvas-container');
-        if (!container) return;
+        // Calculate mouse position in normalized device coordinates
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
         
-        const containerRect = container.getBoundingClientRect();
-        const containerWidth = containerRect.width;
-        const containerHeight = containerRect.height;
-        
-        // Calculate mouse position relative to container
-        const mouseX = event.clientX - containerRect.left;
-        const mouseY = event.clientY - containerRect.top;
-        
-        // Calculate mouse position in normalized device coordinates (-1 to 1)
-        this.mouse.x = (mouseX / containerWidth) * 2 - 1;
-        this.mouse.y = -((mouseY / containerHeight) * 2 - 1);
+        // DEBUG: Log mouse and camera position
+        console.log('=== MOUSE CLICK DEBUG ===');
+        console.log('Mouse Screen Position:', { x: event.clientX, y: event.clientY });
+        console.log('Mouse NDC:', { x: this.mouse.x, y: this.mouse.y });
+        console.log('Camera Position:', {
+            x: this.camera.position.x.toFixed(3),
+            y: this.camera.position.y.toFixed(3),
+            z: this.camera.position.z.toFixed(3)
+        });
+        console.log('Camera Target:', {
+            x: this.controls.target.x.toFixed(3),
+            y: this.controls.target.y.toFixed(3),
+            z: this.controls.target.z.toFixed(3)
+        });
         
         // Update raycaster
         this.raycaster.setFromCamera(this.mouse, this.camera);
@@ -2801,7 +2885,14 @@ class SatelliteViewer {
             const clickedObject = intersects[0].object;
             const intersectionPoint = intersects[0].point;
             
-            console.log('Double-click detected on object:', clickedObject.name || clickedObject.uuid);
+            // DEBUG: Log intersection details
+            console.log('Intersection Point (World):', {
+                x: intersectionPoint.x.toFixed(3),
+                y: intersectionPoint.y.toFixed(3),
+                z: intersectionPoint.z.toFixed(3)
+            });
+            console.log('Clicked Object:', clickedObject.name || 'Unnamed');
+            console.log('Distance from camera:', intersectionPoint.distanceTo(this.camera.position).toFixed(3));
             
             // Store the intersection point for positioning the popup
             this.lastIntersectionPoint = intersectionPoint.clone();
@@ -2811,15 +2902,13 @@ class SatelliteViewer {
             
             // If clicking the same part, close the indicator
             if (this.selectedPart === clickedObject) {
-                console.log('Closing indicator (same part clicked)');
                 this.closeIndicator();
             } else {
                 // Show indicator for new part
-                console.log('Showing indicator for new part');
                 this.showIndicator(clickedObject, intersectionPoint);
             }
         } else {
-            console.log('No intersection found on double-click');
+            console.log('No intersection found');
         }
     }
 
@@ -2832,38 +2921,42 @@ class SatelliteViewer {
         object.worldToLocal(localIntersection);
         this.selectedIntersectionPoint = localIntersection;
         
+        // DEBUG: Log indicator details
+        console.log('=== SHOW INDICATOR DEBUG ===');
+        console.log('Object:', object.name || 'Unnamed');
+        console.log('Intersection Point (World):', {
+            x: intersectionPoint.x.toFixed(3),
+            y: intersectionPoint.y.toFixed(3),
+            z: intersectionPoint.z.toFixed(3)
+        });
+        console.log('Intersection Point (Local):', {
+            x: localIntersection.x.toFixed(3),
+            y: localIntersection.y.toFixed(3),
+            z: localIntersection.z.toFixed(3)
+        });
+        
         // Pause rotation when indicator is shown
         this.isRotationPaused = true;
         
         const partInfo = object.userData.partInfo || this.partData.get(object.uuid);
         
-        console.log('showIndicator called:', {
-            objectName: object.name,
-            hasPartInfo: !!partInfo,
-            partInfo: partInfo
-        });
-        
         if (partInfo) {
             // Format the name for display
             const displayName = this.formatPartName(partInfo.name);
-            const titleElement = document.getElementById('indicator-title');
-            const descElement = document.getElementById('indicator-description');
-            const overlay = document.getElementById('indicator-overlay');
-            
-            if (titleElement) titleElement.textContent = displayName;
-            if (descElement) descElement.textContent = partInfo.description;
+            document.getElementById('indicator-title').textContent = displayName;
+            document.getElementById('indicator-description').textContent = partInfo.description;
             
             // Initial update of line and popup position
             this.updateIndicatorPosition();
             
-            if (overlay) {
-                overlay.classList.remove('hidden');
-                console.log('Indicator overlay shown');
-            } else {
-                console.error('Indicator overlay element not found!');
-            }
-        } else {
-            console.warn('No part info found for object:', object.name || object.uuid);
+            const overlay = document.getElementById('indicator-overlay');
+            overlay.classList.remove('hidden');
+
+            // Show panel first, then line after a short delay
+            this.indicatorLineReady = false;
+            setTimeout(() => {
+                this.indicatorLineReady = true;
+            }, 250);
         }
     }
 
@@ -2872,11 +2965,6 @@ class SatelliteViewer {
         
         // Normalize part name for matching (handle variations)
         const normalizedName = partName.toLowerCase().trim();
-        
-        // Disable Solar Arrays for now - do nothing
-        if (normalizedName === 'solar arrays') {
-            return;
-        }
         const matchPatterns = {
             'crew module': ['crew module', 'heat shield'],
             'european service': ['european service', 'european service module', 'mid02', 'mid17', 'mid02 white', 'mid17 white'],
@@ -2925,6 +3013,11 @@ class SatelliteViewer {
                 }
             }
         });
+
+        // Fallback: if European Service is not found, use the full satellite
+        if (matchingObjects.length === 0 && normalizedName === 'european service' && this.satellite) {
+            matchingObjects.push(this.satellite);
+        }
         
         // Focus camera on matching parts if any found
         if (matchingObjects.length > 0) {
@@ -2941,7 +3034,8 @@ class SatelliteViewer {
                 // For Crew Module, European Service, Solar Arrays, and Exhaust, show popup label and focus without getting too close
                 if (normalizedName === 'crew module' || normalizedName === 'european service' || normalizedName === 'solar arrays' || normalizedName === 'exhaust') {
                     // Use a closer distance for better view
-                    const distance = maxDim * 2.2; // Closer to the object
+                    // For Solar Arrays, use a fixed distance for a tighter shot
+                    const distance = normalizedName === 'solar arrays' ? 3 : maxDim * 2.2;
                     
                     let selectedObject = matchingObjects[0];
                     
@@ -2958,38 +3052,39 @@ class SatelliteViewer {
                         }
                     }
                     
-                    // For Solar Arrays, find the lower-left panel (lowest Y, leftmost X) to match the image
+                    // For Solar Arrays, find Panel_01 specifically
                     if (normalizedName === 'solar arrays' && matchingObjects.length > 0) {
-                        if (matchingObjects.length === 1) {
+                        // Try to find Panel_01 by name
+                        let panel01 = matchingObjects.find(obj => {
+                            const objName = obj.name ? obj.name.toLowerCase() : '';
+                            return objName.includes('panel_01') || objName.includes('panel01');
+                        });
+                        
+                        if (panel01) {
+                            selectedObject = panel01;
+                        } else if (matchingObjects.length === 1) {
                             selectedObject = matchingObjects[0];
                         } else {
-                            // Find the panel that's "downwards and to the left" (lowest Y, leftmost X)
+                            // Fallback: choose the leftmost panel to keep the popup near left arrays
                             const positions = matchingObjects.map(obj => {
                                 const box = new THREE.Box3().setFromObject(obj);
                                 const objCenter = box.getCenter(new THREE.Vector3());
                                 obj.localToWorld(objCenter);
-                                return { obj, center: objCenter, y: objCenter.y, x: objCenter.x };
+                                return { obj, x: objCenter.x };
                             });
                             
-                            // Sort by lowest Y first, then by leftmost X
-                            positions.sort((a, b) => {
-                                const yDiff = Math.abs(a.y - b.y);
-                                if (yDiff > 0.1) {
-                                    return a.y - b.y; // Lower Y first (downwards)
-                                }
-                                return a.x - b.x; // Lower X (more left) first
-                            });
-                            
+                            positions.sort((a, b) => a.x - b.x); // leftmost X first
                             selectedObject = positions[0].obj;
                         }
                     }
                     
                     // Define camera position first (needed for Solar Arrays calculation)
                     let offset;
+                    let targetPositionOverride = null;
+                    let lookAtOverride = null;
                     if (normalizedName === 'solar arrays') {
-                        // For Solar Arrays: match the reference image - central view, slightly angled
-                        // Camera positioned to show satellite centrally with lower-left panel in focus
-                        offset = new THREE.Vector3(-0.3, 0.2, -1.2).multiplyScalar(distance);
+                        // For Solar Arrays: front view showing spacecraft and full panels
+                        offset = new THREE.Vector3(0.0, 0.2, -1.3).multiplyScalar(distance);
                     } else if (normalizedName === 'exhaust') {
                         // For Exhaust: show the opposite side with gentle rotation approach
                         // Start further away and rotate around
@@ -2998,20 +3093,30 @@ class SatelliteViewer {
                         // For Crew Module: front view with circular structure visible on the right
                         offset = new THREE.Vector3(-0.4, 0.15, -1.1).multiplyScalar(distance);
                     } else if (normalizedName === 'european service') {
-                        // For European Service: right side view, rotated 10 degrees to the left
-                        const angle10Deg = -Math.PI / 18; // -10 degrees in radians (opposite direction)
-                        const cos10 = Math.cos(angle10Deg);
-                        const sin10 = Math.sin(angle10Deg);
-                        // Rotate the right-side position (1, 0, 0) 10 degrees counter-clockwise around Y-axis
-                        offset = new THREE.Vector3(cos10, 0.15, sin10).multiplyScalar(distance);
+                        // For European Service: use exact captured camera position/target
+                        targetPositionOverride = new THREE.Vector3(-3.80, -0.63, 0.56);
+                        lookAtOverride = new THREE.Vector3(-0.04, -0.06, 0.07);
                     } else {
                         // Default fallback
                         offset = new THREE.Vector3(-0.5, 0.2, -1).multiplyScalar(distance);
                     }
-                    const targetPosition = center.clone().add(offset);
-                    const lookAtPoint = center;
+                    const targetPosition = targetPositionOverride || center.clone().add(offset);
+                    // For Solar Arrays, look at the center of the entire satellite to show the whole spacecraft
+                    let lookAtPoint = lookAtOverride || center;
+                    if (normalizedName === 'solar arrays' && this.satellite) {
+                        const satelliteBox = new THREE.Box3().setFromObject(this.satellite);
+                        if (!satelliteBox.isEmpty()) {
+                            lookAtPoint = satelliteBox.getCenter(new THREE.Vector3());
+                        }
+                    }
                     
-                    // Show the indicator popup for the selected part
+                    // Smooth camera transition
+                    const startPosition = this.camera.position.clone();
+                    const startTarget = this.controls.target.clone();
+                    const startTime = performance.now();
+                    const duration = normalizedName === 'exhaust' ? 2500 : 1500; // Longer duration for smoother transitions
+                    
+                    // Show the indicator popup for the selected part after camera movement
                     if (selectedObject) {
                         // Calculate the intersection point on the actual part surface (in world coordinates)
                         let intersectionPoint = center.clone();
@@ -3082,65 +3187,108 @@ class SatelliteViewer {
                             description: partDescription
                         };
                         
-                        // For Solar Arrays, delay showing popup until camera animation completes
+                        // Delay showing popup until camera animation completes
                         if (normalizedName === 'solar arrays') {
                             // Wait for camera animation to complete, then calculate accurate intersection point
                             setTimeout(() => {
-                                // Calculate accurate intersection point on the visible panel surface
-                                const objBox = new THREE.Box3().setFromObject(selectedObject);
-                                const size = objBox.getSize(new THREE.Vector3());
-                                const localCenter = objBox.getCenter(new THREE.Vector3());
+                                // DEBUG: Log camera position after animation
+                                console.log('=== SOLAR ARRAYS PRESET DEBUG ===');
+                                console.log('Camera Position (after animation):', {
+                                    x: this.camera.position.x.toFixed(3),
+                                    y: this.camera.position.y.toFixed(3),
+                                    z: this.camera.position.z.toFixed(3)
+                                });
+                                console.log('Camera Target:', {
+                                    x: this.controls.target.x.toFixed(3),
+                                    y: this.controls.target.y.toFixed(3),
+                                    z: this.controls.target.z.toFixed(3)
+                                });
+                                console.log('Selected Object:', selectedObject.name || 'Unnamed');
                                 
-                                // Get the current camera position in world space
+                                // Use raycasting to find the exact intersection point on the panel surface
+                                const raycaster = new THREE.Raycaster();
                                 const cameraWorldPos = this.camera.position.clone();
                                 
-                                // Convert camera position to object's local space
-                                const cameraLocalPos = cameraWorldPos.clone();
-                                selectedObject.worldToLocal(cameraLocalPos);
+                                // Get the panel's bounding box center in world space
+                                const objBox = new THREE.Box3().setFromObject(selectedObject);
+                                const panelCenter = objBox.getCenter(new THREE.Vector3());
+                                selectedObject.localToWorld(panelCenter);
                                 
-                                // Calculate direction from panel center to camera (to find which face is visible)
-                                const toCamera = cameraLocalPos.clone().sub(localCenter);
-                                const toCameraNormalized = toCamera.normalize();
+                                console.log('Panel Center (World):', {
+                                    x: panelCenter.x.toFixed(3),
+                                    y: panelCenter.y.toFixed(3),
+                                    z: panelCenter.z.toFixed(3)
+                                });
                                 
-                                // Find which face is most visible (the one facing the camera)
-                                const absX = Math.abs(toCameraNormalized.x);
-                                const absY = Math.abs(toCameraNormalized.y);
-                                const absZ = Math.abs(toCameraNormalized.z);
+                                // Calculate direction from camera to panel center
+                                const direction = panelCenter.clone().sub(cameraWorldPos).normalize();
                                 
-                                // Place point on the front-facing surface (the face closest to camera)
-                                const surfacePoint = localCenter.clone();
+                                console.log('Ray Direction:', {
+                                    x: direction.x.toFixed(3),
+                                    y: direction.y.toFixed(3),
+                                    z: direction.z.toFixed(3)
+                                });
                                 
-                                // Determine the most visible face and place point on that surface
-                                // Use the face that has the largest component in the direction to camera
-                                if (absX >= absY && absX >= absZ) {
-                                    // X-axis face is most visible - place point on the face pointing toward camera
-                                    surfacePoint.x += toCameraNormalized.x > 0 ? size.x * 0.48 : -size.x * 0.48;
-                                } else if (absY >= absX && absY >= absZ) {
-                                    // Y-axis face is most visible
-                                    surfacePoint.y += toCameraNormalized.y > 0 ? size.y * 0.48 : -size.y * 0.48;
+                                // Cast ray from camera through panel center
+                                raycaster.set(cameraWorldPos, direction);
+                                
+                                // Find intersection with the panel
+                                const intersects = raycaster.intersectObject(selectedObject, true);
+                                
+                                console.log('Raycast Intersections:', intersects.length);
+                                
+                                let finalIntersection;
+                                if (intersects.length > 0) {
+                                    // Use the first intersection point (closest to camera)
+                                    finalIntersection = intersects[0].point;
+                                    console.log('Using Raycast Intersection:', {
+                                        x: finalIntersection.x.toFixed(3),
+                                        y: finalIntersection.y.toFixed(3),
+                                        z: finalIntersection.z.toFixed(3),
+                                        distance: intersects[0].distance.toFixed(3)
+                                    });
                                 } else {
-                                    // Z-axis face is most visible
-                                    surfacePoint.z += toCameraNormalized.z > 0 ? size.z * 0.48 : -size.z * 0.48;
+                                    console.log('No raycast intersection, using fallback calculation');
+                                    // Fallback: calculate point on visible surface
+                                    const size = objBox.getSize(new THREE.Vector3());
+                                    const localCenter = objBox.getCenter(new THREE.Vector3());
+                                    const cameraLocalPos = cameraWorldPos.clone();
+                                    selectedObject.worldToLocal(cameraLocalPos);
+                                    
+                                    const toCamera = cameraLocalPos.clone().sub(localCenter);
+                                    const toCameraNormalized = toCamera.normalize();
+                                    
+                                    const absX = Math.abs(toCameraNormalized.x);
+                                    const absY = Math.abs(toCameraNormalized.y);
+                                    const absZ = Math.abs(toCameraNormalized.z);
+                                    
+                                    const surfacePoint = localCenter.clone();
+                                    if (absX >= absY && absX >= absZ) {
+                                        surfacePoint.x += toCameraNormalized.x > 0 ? size.x * 0.48 : -size.x * 0.48;
+                                    } else if (absY >= absX && absY >= absZ) {
+                                        surfacePoint.y += toCameraNormalized.y > 0 ? size.y * 0.48 : -size.y * 0.48;
+                                    } else {
+                                        surfacePoint.z += toCameraNormalized.z > 0 ? size.z * 0.48 : -size.z * 0.48;
+                                    }
+                                    
+                                    finalIntersection = surfacePoint.clone();
+                                    selectedObject.localToWorld(finalIntersection);
+                                    console.log('Fallback Intersection:', {
+                                        x: finalIntersection.x.toFixed(3),
+                                        y: finalIntersection.y.toFixed(3),
+                                        z: finalIntersection.z.toFixed(3)
+                                    });
                                 }
-                                
-                                // Convert to world coordinates
-                                const finalIntersection = surfacePoint.clone();
-                                selectedObject.localToWorld(finalIntersection);
                                 
                                 // Show indicator with the accurately calculated point
                                 this.showIndicator(selectedObject, finalIntersection);
-                            }, 1600); // Wait for camera animation to complete (1500ms + buffer)
+                            }, duration + 100);
                         } else {
-                            // Show the indicator immediately for other parts
-                            this.showIndicator(selectedObject, intersectionPoint);
+                            setTimeout(() => {
+                                this.showIndicator(selectedObject, intersectionPoint);
+                            }, duration + 100);
                         }
                     }
-                    
-                    // Smooth camera transition
-                    const startPosition = this.camera.position.clone();
-                    const startTarget = this.controls.target.clone();
-                    const startTime = performance.now();
-                    const duration = normalizedName === 'exhaust' ? 2500 : 1500; // Longer duration for smoother transitions
                     
                     const animateCamera = () => {
                         const elapsed = performance.now() - startTime;
@@ -3256,6 +3404,43 @@ class SatelliteViewer {
         this.currentPreset = null;
     }
 
+    setDefaultViewFromCamera() {
+        if (!this.camera || !this.controls) return;
+        this.defaultCameraPosition = this.camera.position.clone();
+        this.defaultControlsTarget = this.controls.target.clone();
+    }
+
+    resetToDefaultView() {
+        if (!this.camera || !this.controls || !this.defaultCameraPosition || !this.defaultControlsTarget) return;
+
+        const startPosition = this.camera.position.clone();
+        const startTarget = this.controls.target.clone();
+        const endPosition = this.defaultCameraPosition.clone();
+        const endTarget = this.defaultControlsTarget.clone();
+        const startTime = performance.now();
+        const duration = 1000;
+
+        this.closeIndicator();
+        this.selectedObject = null;
+        this.selectedIntersectionPoint = null;
+
+        const animateCamera = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+            this.camera.position.lerpVectors(startPosition, endPosition, easeProgress);
+            this.controls.target.lerpVectors(startTarget, endTarget, easeProgress);
+            this.controls.update();
+
+            if (progress < 1) {
+                requestAnimationFrame(animateCamera);
+            }
+        };
+
+        animateCamera();
+    }
+
     updateIndicatorPosition() {
         if (!this.selectedObject || !this.selectedIntersectionPoint) return;
         
@@ -3276,12 +3461,11 @@ class SatelliteViewer {
         
         let offsetY;
         if (isSolarArray) {
-            // For solar arrays, calculate offset based on the panel's orientation
-            // Use the smallest dimension to ensure popup stays close to the thin panel
+            // For solar arrays, keep the popup closer to the panel surface
             const minDim = Math.min(size.x, size.y, size.z);
-            offsetY = Math.max(minDim * 0.5, 0.2); // Smaller offset for thin panels
+            offsetY = Math.max(minDim * 0.2, 0.1);
         } else {
-            offsetY = Math.max(size.y * 0.5, 0.5); // At least 0.5 units up
+            offsetY = Math.max(size.y * 0.5, 0.5);
         }
         
         // Create a point above the intersection (initial estimate)
@@ -3290,43 +3474,91 @@ class SatelliteViewer {
         
         // Convert 3D world position to screen coordinates
         const vector = popupPosition.project(this.camera);
+        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
         
-        // Get container dimensions for accurate positioning
-        const container = document.getElementById('canvas-container');
-        const containerWidth = container ? (container.clientWidth || container.offsetWidth || window.innerWidth) : window.innerWidth;
-        const containerHeight = container ? (container.clientHeight || container.offsetHeight || window.innerHeight) : window.innerHeight;
-        
-        // Get container position relative to viewport
-        const containerRect = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
-        
-        const x = (vector.x * 0.5 + 0.5) * containerWidth + containerRect.left;
-        const y = (-vector.y * 0.5 + 0.5) * containerHeight + containerRect.top;
+        // DEBUG: Log position calculations
+        console.log('=== UPDATE INDICATOR POSITION DEBUG ===');
+        console.log('World Intersection:', {
+            x: worldIntersection.x.toFixed(3),
+            y: worldIntersection.y.toFixed(3),
+            z: worldIntersection.z.toFixed(3)
+        });
+        console.log('Popup Position (World):', {
+            x: popupPosition.x.toFixed(3),
+            y: popupPosition.y.toFixed(3),
+            z: popupPosition.z.toFixed(3)
+        });
+        console.log('Projected Vector:', {
+            x: vector.x.toFixed(3),
+            y: vector.y.toFixed(3),
+            z: vector.z.toFixed(3)
+        });
+        console.log('Screen Coordinates:', { x: x.toFixed(1), y: y.toFixed(1) });
+        console.log('Window Size:', { width: window.innerWidth, height: window.innerHeight });
+        console.log('Offset Y:', offsetY.toFixed(3));
+        console.log('Is Solar Array:', isSolarArray);
         
         // Position the overlay above the intersection point
-        // For solar arrays, ensure it's positioned correctly relative to the marker
-        overlay.style.left = x + 'px';
-        overlay.style.top = (y - 10) + 'px';
-        overlay.style.transform = 'translate(-50%, -100%)'; // Center horizontally, position above
-        overlay.style.position = 'fixed';
-        
-        // Calculate the bottom center of the popup box in screen space
-        const popupRect = overlay.getBoundingClientRect();
-        let popupBottomX, popupBottomY;
-        
-        if (isSolarArray) {
-            // For solar arrays with fixed position, use the center-bottom of the popup
-            popupBottomX = popupRect.left + popupRect.width / 2; // Center X
-            popupBottomY = popupRect.bottom; // Bottom Y
+        // For solar arrays, bias the popup toward the upper-left area (near the left panels)
+        let desiredLeft = x;
+        let desiredTop = y - 10;
+        if (isSolarArray && this.satellite) {
+            // Place popup at the top of the overall model
+            const satelliteBox = new THREE.Box3().setFromObject(this.satellite);
+            if (!satelliteBox.isEmpty()) {
+                const topCenter = satelliteBox.getCenter(new THREE.Vector3());
+                topCenter.y = satelliteBox.max.y;
+                const topVector = topCenter.clone().project(this.camera);
+                const topX = (topVector.x * 0.5 + 0.5) * window.innerWidth;
+                const topY = (-topVector.y * 0.5 + 0.5) * window.innerHeight;
+                desiredLeft = topX;
+                desiredTop = topY - 10;
+            }
+            overlay.style.transform = 'translate(-50%, -100%)';
         } else {
-            // For other parts, use the calculated position
-            popupBottomX = popupRect.left + popupRect.width / 2; // Center X
-            popupBottomY = popupRect.bottom; // Bottom Y
+            overlay.style.transform = 'translate(-50%, -100%)';
         }
+        overlay.style.position = 'fixed';
+        overlay.style.left = desiredLeft + 'px';
+        overlay.style.top = desiredTop + 'px';
+
+        // Clamp the popup to the viewport so it stays visible
+        let popupRect = overlay.getBoundingClientRect();
+        const padding = 12;
+        const minLeft = padding + popupRect.width / 2;
+        const maxLeft = window.innerWidth - padding - popupRect.width / 2;
+        const minTop = padding + 40; // keep below top buttons
+        const maxTop = window.innerHeight - padding - popupRect.height;
+        const clampedLeft = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
+        const clampedTop = Math.min(Math.max(desiredTop, minTop), maxTop);
+        if (clampedLeft !== desiredLeft || clampedTop !== desiredTop) {
+            overlay.style.left = clampedLeft + 'px';
+            overlay.style.top = clampedTop + 'px';
+            popupRect = overlay.getBoundingClientRect();
+        }
+
+        // Calculate the bottom center of the popup box in screen space
+        const popupBottomX = popupRect.left + popupRect.width / 2;
+        const popupBottomY = popupRect.bottom;
+        
+        // DEBUG: Log popup rect
+        console.log('Popup Rect:', {
+            left: popupRect.left.toFixed(1),
+            top: popupRect.top.toFixed(1),
+            right: popupRect.right.toFixed(1),
+            bottom: popupRect.bottom.toFixed(1),
+            width: popupRect.width.toFixed(1),
+            height: popupRect.height.toFixed(1)
+        });
+        console.log('Popup Bottom Center:', {
+            x: popupBottomX.toFixed(1),
+            y: popupBottomY.toFixed(1)
+        });
         
         // Convert screen coordinates to normalized device coordinates
-        // Use container dimensions for accurate NDC calculation
-        const ndcX = ((popupBottomX - containerRect.left) / containerWidth) * 2 - 1;
-        const ndcY = -(((popupBottomY - containerRect.top) / containerHeight) * 2 - 1);
+        const ndcX = (popupBottomX / window.innerWidth) * 2 - 1;
+        const ndcY = -((popupBottomY / window.innerHeight) * 2 - 1);
         
         // Create a raycaster to find the 3D position at the bottom of the popup
         const tempRaycaster = new THREE.Raycaster();
@@ -3338,22 +3570,65 @@ class SatelliteViewer {
         const popup3DPosition = this.camera.position.clone();
         popup3DPosition.add(tempRaycaster.ray.direction.clone().multiplyScalar(distance));
         
-        // Update the connection line to attach to the bottom of the popup box
-        this.updateConnectionLine(worldIntersection, popup3DPosition);
+        // DEBUG: Log final 3D positions
+        console.log('Popup 3D Position:', {
+            x: popup3DPosition.x.toFixed(3),
+            y: popup3DPosition.y.toFixed(3),
+            z: popup3DPosition.z.toFixed(3)
+        });
+        console.log('Distance from camera:', distance.toFixed(3));
         
-        // Update the marker position at the start of the line
-        this.updateConnectionMarker(worldIntersection);
+        if (!this.indicatorLineReady) {
+            // Hide line/marker until panel is shown
+            if (this.connectionLine) {
+                this.scene.remove(this.connectionLine);
+                this.connectionLine.geometry.dispose();
+                this.connectionLine.material.dispose();
+                this.connectionLine = null;
+            }
+            if (this.connectionMarker) {
+                this.scene.remove(this.connectionMarker);
+                this.connectionMarker.geometry.dispose();
+                this.connectionMarker.material.dispose();
+                this.connectionMarker = null;
+            }
+            return;
+        }
+
+        if (isSolarArray) {
+            // Hide indicator line for Solar Arrays
+            if (this.connectionLine) {
+                this.scene.remove(this.connectionLine);
+                this.connectionLine.geometry.dispose();
+                this.connectionLine.material.dispose();
+                this.connectionLine = null;
+            }
+            if (this.connectionMarker) {
+                this.scene.remove(this.connectionMarker);
+                this.connectionMarker.geometry.dispose();
+                this.connectionMarker.material.dispose();
+                this.connectionMarker = null;
+            }
+        } else {
+            // Update the connection line to attach to the bottom of the popup box
+            this.updateConnectionLine(worldIntersection, popup3DPosition);
+            
+            // Update the marker position at the start of the line
+            this.updateConnectionMarker(worldIntersection);
+        }
     }
 
-    updateConnectionLine(startPoint, endPoint) {
+    updateConnectionLine(startPoint, endPoint, shortenFactor = 1.0) {
+        // Shorten the line based on factor (1.0 = full length)
+        const shortenedEnd = startPoint.clone().lerp(endPoint, shortenFactor);
         if (!this.connectionLine) {
             // Create line if it doesn't exist
-            this.createConnectionLine(startPoint, endPoint);
+            this.createConnectionLine(startPoint, shortenedEnd);
         } else {
             // Update existing line geometry
             const positions = this.connectionLine.geometry.attributes.position;
             positions.setXYZ(0, startPoint.x, startPoint.y, startPoint.z);
-            positions.setXYZ(1, endPoint.x, endPoint.y, endPoint.z);
+            positions.setXYZ(1, shortenedEnd.x, shortenedEnd.y, shortenedEnd.z);
             positions.needsUpdate = true;
         }
     }
@@ -3488,6 +3763,7 @@ class SatelliteViewer {
         this.selectedObject = null;
         this.selectedIntersectionPoint = null;
         this.lastIntersectionPoint = null;
+        this.indicatorLineReady = true;
         
         // Remove connection line
         if (this.connectionLine) {
@@ -3512,46 +3788,36 @@ class SatelliteViewer {
         this.isRotationPaused = false;
     }
 
-    onWindowResize() {
-        const container = document.getElementById('canvas-container');
-        if (!container) return;
-        
-        const containerWidth = container.clientWidth || container.offsetWidth || window.innerWidth;
-        const containerHeight = container.clientHeight || container.offsetHeight || window.innerHeight;
-        
-        this.camera.aspect = containerWidth / containerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(containerWidth, containerHeight);
-    }
-    
-    updatePanelHeight() {
-        const container = document.getElementById('canvas-container');
-        const rightPanel = document.getElementById('right-panel');
-        const rightPanelToggle = document.getElementById('right-panel-toggle');
-        
-        if (!container || !rightPanel) return;
-        
-        // Get container position and dimensions
-        const containerRect = container.getBoundingClientRect();
-        const containerHeight = containerRect.height;
-        const containerTop = containerRect.top;
-        
-        // Set panel height and position to match canvas container
-        rightPanel.style.height = containerHeight + 'px';
-        rightPanel.style.top = containerTop + 'px';
-        
-        // Update toggle button position to align with canvas container top
-        if (rightPanelToggle) {
-            const isCollapsed = rightPanel.classList.contains('collapsed');
-            // Position button at the top of the canvas container
-            if (isCollapsed) {
-                rightPanelToggle.style.top = (containerRect.top + 20) + 'px';
-                rightPanelToggle.style.bottom = 'auto';
-            } else {
-                rightPanelToggle.style.top = (containerRect.top + 20) + 'px';
-                rightPanelToggle.style.bottom = 'auto';
-            }
+    fadeOutIndicator() {
+        const overlay = document.getElementById('indicator-overlay');
+        if (!overlay || overlay.classList.contains('hidden')) {
+            return false;
         }
+        overlay.classList.add('hidden');
+        // Clean up line/marker after fade completes
+        setTimeout(() => {
+            if (overlay.classList.contains('hidden')) {
+                if (this.connectionLine) {
+                    this.scene.remove(this.connectionLine);
+                    this.connectionLine.geometry.dispose();
+                    this.connectionLine.material.dispose();
+                    this.connectionLine = null;
+                }
+                if (this.connectionMarker) {
+                    this.scene.remove(this.connectionMarker);
+                    this.connectionMarker.geometry.dispose();
+                    this.connectionMarker.material.dispose();
+                    this.connectionMarker = null;
+                }
+            }
+        }, 320);
+        return true;
+    }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
     animate() {
@@ -3619,17 +3885,32 @@ class SatelliteViewer {
         
         // Render
         this.renderer.render(this.scene, this.camera);
+
+        // Update camera debug overlay
+        this.updateCameraDebug();
+    }
+
+    updateCameraDebug() {
+        if (!this.cameraDebugContent || !this.camera || !this.controls) return;
+
+        const camPos = this.camera.position;
+        const camRot = this.camera.rotation;
+        const camDir = new THREE.Vector3();
+        this.camera.getWorldDirection(camDir);
+        const target = this.controls.target;
+        const distance = camPos.distanceTo(target);
+
+        this.cameraDebugContent.textContent =
+            `Pos: (${camPos.x.toFixed(2)}, ${camPos.y.toFixed(2)}, ${camPos.z.toFixed(2)})\n` +
+            `Rot: (${THREE.MathUtils.radToDeg(camRot.x).toFixed(1)}°, ${THREE.MathUtils.radToDeg(camRot.y).toFixed(1)}°, ${THREE.MathUtils.radToDeg(camRot.z).toFixed(1)}°)\n` +
+            `Dir: (${camDir.x.toFixed(2)}, ${camDir.y.toFixed(2)}, ${camDir.z.toFixed(2)})\n` +
+            `Target: (${target.x.toFixed(2)}, ${target.y.toFixed(2)}, ${target.z.toFixed(2)})\n` +
+            `Distance: ${distance.toFixed(2)}`;
     }
 }
 
 // Initialize the viewer when the page loads
 window.addEventListener('DOMContentLoaded', () => {
-    const viewer = new SatelliteViewer();
-    // Update panel height after a short delay to ensure container is rendered
-    setTimeout(() => {
-        if (viewer && viewer.updatePanelHeight) {
-            viewer.updatePanelHeight();
-        }
-    }, 100);
+    new SatelliteViewer();
 });
 

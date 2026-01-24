@@ -28,11 +28,18 @@
         <p>Press 'P': Toggle panel</p>
     </div>
 
+    <!-- Camera Debug Info -->
+    <div id="camera-debug" class="camera-debug">
+        <div class="camera-debug-title">Camera</div>
+        <div id="camera-debug-content" class="camera-debug-content"></div>
+    </div>
+
     <!-- Panel Toggle Button (outside panel to always be visible) -->
     <button id="right-panel-toggle" class="right-panel-toggle">►</button>
     
     <!-- Preset Buttons (shown when panel is hidden) -->
     <div id="preset-buttons" class="preset-buttons hidden">
+        <button class="preset-button" data-action="home">Orion</button>
         <button class="preset-button" data-part="Crew Module">Crew Module</button>
         <button class="preset-button" data-part="European Service">European Service</button>
         <button class="preset-button" data-part="Solar Arrays">Solar Arrays</button>
@@ -66,12 +73,11 @@
             </div>
             <div id="load-panel-content" class="panel-content">
                 <input type="file" id="model-file-input" accept=".gltf,.glb" style="display: none;">
-                <button id="load-model-button" class="panel-button">Load Model</button>
+                <button id="load-model-button" class="panel-button" style="display: none; pointer-events: none;" disabled>Load Model</button>
                 <div class="replace-model-dropdown">
                     <button id="replace-model-button" class="panel-button">Replace Model ▼</button>
                     <div id="replace-model-menu" class="replace-model-menu hidden">
-                        <button class="replace-model-option" data-model="assets/models/NASA_Orion_GLTF_TEST1A.gltf">Model A</button>
-                        <button class="replace-model-option" data-model="assets/models/NASA_Orion_GLTF_TEST1B.gltf">Model B</button>
+                        <!-- Model options will be populated dynamically -->
                     </div>
                 </div>
             </div>

@@ -42,6 +42,36 @@ body {
     color: #4a9eff;
 }
 
+/* Camera Debug Overlay */
+.camera-debug {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    z-index: 120;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(74, 158, 255, 0.4);
+    min-width: 220px;
+    pointer-events: none;
+}
+
+.camera-debug-title {
+    color: #4a9eff;
+    font-weight: bold;
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.camera-debug-content {
+    white-space: pre;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
 /* Indicator Overlay */
 .indicator-overlay {
     position: fixed;
@@ -51,7 +81,7 @@ body {
     padding: 25px;
     min-width: 300px;
     max-width: 500px;
-    z-index: 100002;
+    z-index: 1000;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(10px);
     transition: opacity 0.3s ease, transform 0.3s ease;
@@ -116,10 +146,10 @@ body {
     top: 0;
     right: 0;
     width: 350px;
-    height: auto;
+    height: 100vh;
     background: rgba(20, 20, 30, 0.95);
-    border-left: 2px solid #666666;
-    z-index: 100000;
+    border-left: 2px solid #4a9eff;
+    z-index: 150;
     display: flex;
     flex-direction: column;
     backdrop-filter: blur(10px);
@@ -127,7 +157,6 @@ body {
     transition: transform 0.3s ease;
     overflow-y: auto;
     overflow-x: visible;
-    max-height: 100vh;
 }
 
 .right-panel.collapsed {
@@ -137,28 +166,24 @@ body {
 .right-panel-toggle {
     position: fixed !important;
     right: 350px;
-    top: 20px;
-    width: 35px;
-    height: 35px;
+    bottom: 20px;
+    width: 40px;
+    height: 60px;
     background: rgba(20, 20, 30, 0.98) !important;
-    border: 2px solid #666666 !important;
+    border: 2px solid #4a9eff !important;
     border-right: none;
     border-radius: 12px;
-    color: #cccccc !important;
-    font-size: 16px;
+    color: #4a9eff !important;
+    font-size: 18px;
     font-weight: bold;
     cursor: pointer;
     display: flex !important;
     align-items: center;
     justify-content: center;
     transition: all 0.3s ease;
-    z-index: 100001 !important;
+    z-index: 10000 !important;
     pointer-events: auto !important;
     box-shadow: -2px 0 8px rgba(0, 0, 0, 0.5);
-    visibility: visible !important;
-    opacity: 1 !important;
-    min-width: 35px;
-    min-height: 35px;
 }
 
 .right-panel-toggle:hover {
@@ -169,44 +194,40 @@ body {
 .right-panel-toggle.panel-collapsed {
     right: 0 !important;
     border-radius: 12px;
-    border-right: 2px solid #666666 !important;
+    border-right: 2px solid #4a9eff !important;
     border-left: none;
-    visibility: visible !important;
-    opacity: 1 !important;
-    min-width: 35px;
-    min-height: 35px;
 }
 
 /* Preset Buttons Panel */
 .preset-buttons {
     position: fixed;
-    right: 50px;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    z-index: 100001;
+    flex-direction: row;
+    gap: 8px;
+    z-index: 151;
     transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 .preset-buttons.hidden {
     opacity: 0;
     pointer-events: none;
-    transform: translateY(-50%) translateX(20px);
+    transform: translateX(-50%) translateY(-10px);
 }
 
 .preset-button {
     background: rgba(20, 20, 30, 0.95);
     border: 2px solid #4a9eff;
     color: #4a9eff;
-    padding: 12px 20px;
+    padding: 10px 16px;
     border-radius: 8px;
     font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.2s ease;
-    min-width: 150px;
+    min-width: 130px;
     text-align: center;
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
@@ -214,7 +235,7 @@ body {
 
 .preset-button:hover {
     background: rgba(74, 158, 255, 0.3);
-    transform: translateX(-5px);
+    transform: translateY(-3px);
     box-shadow: 0 6px 16px rgba(74, 158, 255, 0.4);
 }
 
@@ -230,7 +251,7 @@ body {
 
 /* Panel Section (shared by all sections) */
 .panel-section {
-    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    border-bottom: 1px solid rgba(74, 158, 255, 0.3);
     flex-shrink: 0; /* Prevent sections from shrinking */
 }
 
@@ -248,13 +269,13 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(128, 128, 128, 0.1);
+    background: rgba(74, 158, 255, 0.1);
     cursor: pointer;
     user-select: none;
 }
 
 .panel-header h3 {
-    color: #cccccc;
+    color: #4a9eff;
     font-size: 16px;
     font-weight: bold;
     margin: 0;
@@ -262,8 +283,8 @@ body {
 
 .panel-toggle {
     background: transparent;
-    border: 1px solid #666666;
-    color: #cccccc;
+    border: 1px solid #4a9eff;
+    color: #4a9eff;
     width: 24px;
     height: 24px;
     border-radius: 4px;
@@ -276,7 +297,7 @@ body {
 }
 
 .panel-toggle:hover {
-    background: rgba(128, 128, 128, 0.2);
+    background: rgba(74, 158, 255, 0.2);
 }
 
 .panel-section.collapsed .panel-toggle {
@@ -349,7 +370,7 @@ body {
 }
 
 .panel-button:hover {
-    background: rgba(128, 128, 128, 0.3);
+    background: rgba(74, 158, 255, 0.5);
     transform: translateY(-1px);
 }
 
@@ -369,7 +390,7 @@ body {
     left: 0;
     right: 0;
     background: rgba(20, 20, 30, 0.95);
-    border: 2px solid #666666;
+    border: 2px solid #4a9eff;
     border-radius: 8px;
     min-width: 150px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -507,7 +528,7 @@ body {
 .lighting-section {
     margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    border-bottom: 1px solid rgba(74, 158, 255, 0.2);
 }
 
 .lighting-section:last-child {
@@ -579,7 +600,7 @@ body {
 .lighting-color-picker {
     width: 100%;
     height: 32px;
-    border: 1px solid #666666;
+    border: 1px solid #4a9eff;
     border-radius: 4px;
     cursor: pointer;
     background: transparent;
@@ -599,7 +620,7 @@ body {
     width: 100%;
     padding: 8px;
     background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #666666;
+    border: 1px solid #4a9eff;
     border-radius: 4px;
     color: #fff;
     font-size: 12px;
@@ -615,8 +636,8 @@ body {
 .lighting-button-small {
     width: 100%;
     padding: 8px;
-    background: rgba(128, 128, 128, 0.2);
-    border: 1px solid #666666;
+    background: rgba(74, 158, 255, 0.3);
+    border: 1px solid #4a9eff;
     border-radius: 4px;
     color: #fff;
     font-size: 12px;
@@ -625,7 +646,7 @@ body {
 }
 
 .lighting-button-small:hover {
-    background: rgba(128, 128, 128, 0.3);
+    background: rgba(74, 158, 255, 0.5);
 }
 
 /* Scrollbar styling for lighting panel */

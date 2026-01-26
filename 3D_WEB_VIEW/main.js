@@ -10,6 +10,7 @@ class SatelliteViewer {
         this.camera = null;
         this.renderer = null;
         this.controls = null;
+        this.container = null;
         this.satellite = null;
         this.raycaster = null;
         this.mouse = new THREE.Vector2();
@@ -78,14 +79,17 @@ class SatelliteViewer {
         this.addStarField();
         
         // Create camera
-        const aspect = window.innerWidth / window.innerHeight;
+        this.container = document.getElementById('canvas-container');
+        const containerWidth = this.container ? this.container.clientWidth : window.innerWidth;
+        const containerHeight = this.container ? this.container.clientHeight : window.innerHeight;
+        const aspect = containerWidth / containerHeight;
         this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
         // Position camera on the opposite side to fix viewing angle
         this.camera.position.set(0, 0, -5);
         
         // Create renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize(containerWidth, containerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -95,8 +99,7 @@ class SatelliteViewer {
         this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
         this.pmremGenerator.compileEquirectangularShader();
         
-        const container = document.getElementById('canvas-container');
-        container.appendChild(this.renderer.domElement);
+        this.container.appendChild(this.renderer.domElement);
 
         this.cameraDebugContent = document.getElementById('camera-debug-content');
         
@@ -793,8 +796,9 @@ class SatelliteViewer {
     setupEventListeners() {
         // Mouse click event for debugging
         this.renderer.domElement.addEventListener('click', (event) => {
-            const mouseX = (event.clientX / window.innerWidth) * 2 - 1;
-            const mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            const mouseY = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
             console.log('=== SINGLE CLICK DEBUG ===');
             console.log('Mouse Screen Position:', { x: event.clientX, y: event.clientY });
             console.log('Mouse NDC:', { x: mouseX.toFixed(3), y: mouseY.toFixed(3) });
@@ -2857,8 +2861,9 @@ class SatelliteViewer {
 
     onMouseDoubleClick(event) {
         // Calculate mouse position in normalized device coordinates
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
         
         // DEBUG: Log mouse and camera position
         console.log('=== MOUSE CLICK DEBUG ===');
@@ -3472,10 +3477,11 @@ class SatelliteViewer {
         const popupPosition = worldIntersection.clone();
         popupPosition.y += offsetY;
         
-        // Convert 3D world position to screen coordinates
+        // Convert 3D world position to screen coordinates (relative to canvas)
         const vector = popupPosition.project(this.camera);
-        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        const x = rect.left + (vector.x * 0.5 + 0.5) * rect.width;
+        const y = rect.top + (-vector.y * 0.5 + 0.5) * rect.height;
         
         // DEBUG: Log position calculations
         console.log('=== UPDATE INDICATOR POSITION DEBUG ===');
@@ -3495,7 +3501,7 @@ class SatelliteViewer {
             z: vector.z.toFixed(3)
         });
         console.log('Screen Coordinates:', { x: x.toFixed(1), y: y.toFixed(1) });
-        console.log('Window Size:', { width: window.innerWidth, height: window.innerHeight });
+        console.log('Canvas Size:', { width: rect.width, height: rect.height });
         console.log('Offset Y:', offsetY.toFixed(3));
         console.log('Is Solar Array:', isSolarArray);
         
@@ -3510,8 +3516,8 @@ class SatelliteViewer {
                 const topCenter = satelliteBox.getCenter(new THREE.Vector3());
                 topCenter.y = satelliteBox.max.y;
                 const topVector = topCenter.clone().project(this.camera);
-                const topX = (topVector.x * 0.5 + 0.5) * window.innerWidth;
-                const topY = (-topVector.y * 0.5 + 0.5) * window.innerHeight;
+                const topX = rect.left + (topVector.x * 0.5 + 0.5) * rect.width;
+                const topY = rect.top + (-topVector.y * 0.5 + 0.5) * rect.height;
                 desiredLeft = topX;
                 desiredTop = topY - 10;
             }
@@ -3556,9 +3562,9 @@ class SatelliteViewer {
             y: popupBottomY.toFixed(1)
         });
         
-        // Convert screen coordinates to normalized device coordinates
-        const ndcX = (popupBottomX / window.innerWidth) * 2 - 1;
-        const ndcY = -((popupBottomY / window.innerHeight) * 2 - 1);
+        // Convert screen coordinates to normalized device coordinates relative to canvas
+        const ndcX = ((popupBottomX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -(((popupBottomY - rect.top) / rect.height) * 2 - 1);
         
         // Create a raycaster to find the 3D position at the bottom of the popup
         const tempRaycaster = new THREE.Raycaster();
@@ -3815,9 +3821,11 @@ class SatelliteViewer {
     }
 
     onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
+        const containerWidth = this.container ? this.container.clientWidth : window.innerWidth;
+        const containerHeight = this.container ? this.container.clientHeight : window.innerHeight;
+        this.camera.aspect = containerWidth / containerHeight;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize(containerWidth, containerHeight);
     }
 
     animate() {

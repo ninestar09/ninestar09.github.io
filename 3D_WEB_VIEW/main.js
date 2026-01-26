@@ -3480,8 +3480,8 @@ class SatelliteViewer {
         // Convert 3D world position to screen coordinates (relative to canvas)
         const vector = popupPosition.project(this.camera);
         const rect = this.renderer.domElement.getBoundingClientRect();
-        const x = rect.left + (vector.x * 0.5 + 0.5) * rect.width;
-        const y = rect.top + (-vector.y * 0.5 + 0.5) * rect.height;
+        const x = (vector.x * 0.5 + 0.5) * rect.width;
+        const y = (-vector.y * 0.5 + 0.5) * rect.height;
         
         // DEBUG: Log position calculations
         console.log('=== UPDATE INDICATOR POSITION DEBUG ===');
@@ -3516,8 +3516,8 @@ class SatelliteViewer {
                 const topCenter = satelliteBox.getCenter(new THREE.Vector3());
                 topCenter.y = satelliteBox.max.y;
                 const topVector = topCenter.clone().project(this.camera);
-                const topX = rect.left + (topVector.x * 0.5 + 0.5) * rect.width;
-                const topY = rect.top + (-topVector.y * 0.5 + 0.5) * rect.height;
+                const topX = (topVector.x * 0.5 + 0.5) * rect.width;
+                const topY = (-topVector.y * 0.5 + 0.5) * rect.height;
                 desiredLeft = topX;
                 desiredTop = topY - 10;
             }
@@ -3525,7 +3525,7 @@ class SatelliteViewer {
         } else {
             overlay.style.transform = 'translate(-50%, -100%)';
         }
-        overlay.style.position = 'fixed';
+        overlay.style.position = 'absolute';
         overlay.style.left = desiredLeft + 'px';
         overlay.style.top = desiredTop + 'px';
 
@@ -3533,9 +3533,9 @@ class SatelliteViewer {
         let popupRect = overlay.getBoundingClientRect();
         const padding = 12;
         const minLeft = padding + popupRect.width / 2;
-        const maxLeft = window.innerWidth - padding - popupRect.width / 2;
+        const maxLeft = rect.width - padding - popupRect.width / 2;
         const minTop = padding + 40; // keep below top buttons
-        const maxTop = window.innerHeight - padding - popupRect.height;
+        const maxTop = rect.height - padding - popupRect.height;
         const clampedLeft = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
         const clampedTop = Math.min(Math.max(desiredTop, minTop), maxTop);
         if (clampedLeft !== desiredLeft || clampedTop !== desiredTop) {
@@ -3545,8 +3545,8 @@ class SatelliteViewer {
         }
 
         // Calculate the bottom center of the popup box in screen space
-        const popupBottomX = popupRect.left + popupRect.width / 2;
-        const popupBottomY = popupRect.bottom;
+        const popupBottomX = popupRect.left - rect.left + popupRect.width / 2;
+        const popupBottomY = popupRect.top - rect.top + popupRect.height;
         
         // DEBUG: Log popup rect
         console.log('Popup Rect:', {
@@ -3563,8 +3563,8 @@ class SatelliteViewer {
         });
         
         // Convert screen coordinates to normalized device coordinates relative to canvas
-        const ndcX = ((popupBottomX - rect.left) / rect.width) * 2 - 1;
-        const ndcY = -(((popupBottomY - rect.top) / rect.height) * 2 - 1);
+        const ndcX = (popupBottomX / rect.width) * 2 - 1;
+        const ndcY = -(popupBottomY / rect.height) * 2 - 1;
         
         // Create a raycaster to find the 3D position at the bottom of the popup
         const tempRaycaster = new THREE.Raycaster();

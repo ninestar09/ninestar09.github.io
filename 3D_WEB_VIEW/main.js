@@ -20,6 +20,9 @@ class SatelliteViewer {
         this.lastIntersectionPoint = null; // Store the 3D intersection point
         this.connectionLine = null; // Line connecting object to popup
         this.connectionMarker = null; // Filled circle marker at the start of the line
+        // Secondary line/marker (used for Solar Arrays to draw 2 connectors)
+        this.connectionLine2 = null;
+        this.connectionMarker2 = null;
         this.selectedObject = null; // Store the selected object for real-time updates
         this.selectedIntersectionPoint = null; // Store intersection point in local coordinates
         this.defaultCameraPosition = new THREE.Vector3(0, 0, -5);
@@ -3564,7 +3567,10 @@ class SatelliteViewer {
         
         // Convert screen coordinates to normalized device coordinates relative to canvas
         const ndcX = (popupBottomX / rect.width) * 2 - 1;
-        const ndcY = -(popupBottomY / rect.height) * 2 - 1;
+        // NOTE: NDC Y mapping is: y_ndc = -(y_px / height_px) * 2 + 1
+        // The previous formula subtracted 1 instead of adding it, which pushed the
+        // endpoint off-screen and made the line look like it was "dropping" to the bottom.
+        const ndcY = -(popupBottomY / rect.height) * 2 + 1;
         
         // Create a raycaster to find the 3D position at the bottom of the popup
         const tempRaycaster = new THREE.Raycaster();
@@ -3598,30 +3604,91 @@ class SatelliteViewer {
                 this.connectionMarker.material.dispose();
                 this.connectionMarker = null;
             }
+            if (this.connectionLine2) {
+                this.scene.remove(this.connectionLine2);
+                this.connectionLine2.geometry.dispose();
+                this.connectionLine2.material.dispose();
+                this.connectionLine2 = null;
+            }
+            if (this.connectionMarker2) {
+                this.scene.remove(this.connectionMarker2);
+                this.connectionMarker2.geometry.dispose();
+                this.connectionMarker2.material.dispose();
+                this.connectionMarker2 = null;
+            }
             return;
         }
 
         if (isSolarArray) {
-            // Hide indicator line for Solar Arrays
-            if (this.connectionLine) {
-                this.scene.remove(this.connectionLine);
-                this.connectionLine.geometry.dispose();
-                this.connectionLine.material.dispose();
-                this.connectionLine = null;
-            }
-            if (this.connectionMarker) {
-                this.scene.remove(this.connectionMarker);
-                this.connectionMarker.geometry.dispose();
-                this.connectionMarker.material.dispose();
-                this.connectionMarker = null;
+            // Solar Arrays: draw TWO lines (one from each wing) connected to the popup
+            const [startA, startB] = this.getSolarArrayConnectorStarts(worldIntersection);
+
+            // Primary line/marker
+            this.updateConnectionLine(startA, popup3DPosition);
+            this.updateConnectionMarker(startA);
+
+            // Secondary line/marker (only if we found a distinct second start)
+            if (startB) {
+                this.updateConnectionLine2(startB, popup3DPosition);
+                this.updateConnectionMarker2(startB);
+            } else {
+                this.clearSecondaryConnection();
             }
         } else {
-            // Update the connection line to attach to the bottom of the popup box
+            // All other parts: single line
+            this.clearSecondaryConnection();
             this.updateConnectionLine(worldIntersection, popup3DPosition);
-            
-            // Update the marker position at the start of the line
             this.updateConnectionMarker(worldIntersection);
         }
+    }
+
+    clearSecondaryConnection() {
+        if (this.connectionLine2) {
+            this.scene.remove(this.connectionLine2);
+            this.connectionLine2.geometry.dispose();
+            this.connectionLine2.material.dispose();
+            this.connectionLine2 = null;
+        }
+        if (this.connectionMarker2) {
+            this.scene.remove(this.connectionMarker2);
+            this.connectionMarker2.geometry.dispose();
+            this.connectionMarker2.material.dispose();
+            this.connectionMarker2 = null;
+        }
+    }
+
+    getSolarArrayConnectorStarts(fallbackStart) {
+        // Pick two stable anchor points on the left/right solar panel meshes.
+        // If we can't find them, fall back to the clicked/intersection point.
+        if (!this.satellite) return [fallbackStart, null];
+
+        const candidates = [];
+        this.satellite.traverse((child) => {
+            if (!child || !child.isMesh) return;
+            const info = child.userData.partInfo || this.partData.get(child.uuid);
+            const name = (info && info.name ? info.name : child.name || '').toLowerCase();
+
+            // Heuristic: solar parts usually contain "solar" or "panel"
+            if (!name.includes('solar') && !name.includes('panel')) return;
+
+            const box = new THREE.Box3().setFromObject(child);
+            if (box.isEmpty()) return;
+
+            const center = box.getCenter(new THREE.Vector3());
+            candidates.push({ x: center.x, center });
+        });
+
+        if (candidates.length < 2) return [fallbackStart, null];
+
+        // Choose the left-most and right-most candidate by world X.
+        candidates.sort((a, b) => a.x - b.x);
+        const left = candidates[0].center;
+        const right = candidates[candidates.length - 1].center;
+
+        // If they collapse to the same spot (rare), fall back to a single line.
+        if (left.distanceTo(right) < 1e-3) return [fallbackStart, null];
+
+        return [left, right];
     }
 
     updateConnectionLine(startPoint, endPoint, shortenFactor = 1.0) {
@@ -3639,6 +3706,18 @@ class SatelliteViewer {
         }
     }
 
+    updateConnectionLine2(startPoint, endPoint, shortenFactor = 1.0) {
+        const shortenedEnd = startPoint.clone().lerp(endPoint, shortenFactor);
+        if (!this.connectionLine2) {
+            this.createConnectionLine2(startPoint, shortenedEnd);
+        } else {
+            const positions = this.connectionLine2.geometry.attributes.position;
+            positions.setXYZ(0, startPoint.x, startPoint.y, startPoint.z);
+            positions.setXYZ(1, shortenedEnd.x, shortenedEnd.y, shortenedEnd.z);
+            positions.needsUpdate = true;
+        }
+    }
+
     updateConnectionMarker(position) {
         if (!this.connectionMarker) {
             // Create marker if it doesn't exist
@@ -3646,6 +3725,14 @@ class SatelliteViewer {
         } else {
             // Update existing marker position
             this.connectionMarker.position.copy(position);
+        }
+    }
+
+    updateConnectionMarker2(position) {
+        if (!this.connectionMarker2) {
+            this.createConnectionMarker2(position);
+        } else {
+            this.connectionMarker2.position.copy(position);
         }
     }
 
@@ -3664,6 +3751,22 @@ class SatelliteViewer {
         this.connectionMarker.position.copy(position);
         this.connectionMarker.renderOrder = 999; // Render last (on top)
         this.scene.add(this.connectionMarker);
+    }
+
+    createConnectionMarker2(position) {
+        const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x4a9eff,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        this.connectionMarker2 = new THREE.Mesh(geometry, material);
+        this.connectionMarker2.position.copy(position);
+        this.connectionMarker2.renderOrder = 999;
+        this.scene.add(this.connectionMarker2);
     }
 
     formatPartName(name) {
@@ -3764,6 +3867,33 @@ class SatelliteViewer {
         this.scene.add(this.connectionLine);
     }
 
+    createConnectionLine2(startPoint, endPoint) {
+        if (this.connectionLine2) {
+            this.scene.remove(this.connectionLine2);
+            this.connectionLine2.geometry.dispose();
+            this.connectionLine2.material.dispose();
+        }
+
+        const points = [startPoint, endPoint];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color: 0x4a9eff,
+            linewidth: 2,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        });
+
+        this.connectionLine2 = new THREE.Line(geometry, material);
+        this.connectionLine2.renderOrder = 9999;
+        this.connectionLine2.frustumCulled = false;
+        this.scene.add(this.connectionLine2);
+    }
+
     closeIndicator() {
         this.selectedPart = null;
         this.selectedObject = null;
@@ -3778,6 +3908,12 @@ class SatelliteViewer {
             this.connectionLine.material.dispose();
             this.connectionLine = null;
         }
+        if (this.connectionLine2) {
+            this.scene.remove(this.connectionLine2);
+            this.connectionLine2.geometry.dispose();
+            this.connectionLine2.material.dispose();
+            this.connectionLine2 = null;
+        }
         
         // Remove connection marker
         if (this.connectionMarker) {
@@ -3785,6 +3921,12 @@ class SatelliteViewer {
             this.connectionMarker.geometry.dispose();
             this.connectionMarker.material.dispose();
             this.connectionMarker = null;
+        }
+        if (this.connectionMarker2) {
+            this.scene.remove(this.connectionMarker2);
+            this.connectionMarker2.geometry.dispose();
+            this.connectionMarker2.material.dispose();
+            this.connectionMarker2 = null;
         }
         
         const overlay = document.getElementById('indicator-overlay');
@@ -3809,11 +3951,23 @@ class SatelliteViewer {
                     this.connectionLine.material.dispose();
                     this.connectionLine = null;
                 }
+                if (this.connectionLine2) {
+                    this.scene.remove(this.connectionLine2);
+                    this.connectionLine2.geometry.dispose();
+                    this.connectionLine2.material.dispose();
+                    this.connectionLine2 = null;
+                }
                 if (this.connectionMarker) {
                     this.scene.remove(this.connectionMarker);
                     this.connectionMarker.geometry.dispose();
                     this.connectionMarker.material.dispose();
                     this.connectionMarker = null;
+                }
+                if (this.connectionMarker2) {
+                    this.scene.remove(this.connectionMarker2);
+                    this.connectionMarker2.geometry.dispose();
+                    this.connectionMarker2.material.dispose();
+                    this.connectionMarker2 = null;
                 }
             }
         }, 320);

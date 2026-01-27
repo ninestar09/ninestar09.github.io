@@ -60,6 +60,10 @@ body {
     pointer-events: none;
 }
 
+.camera-debug.hidden {
+    display: none;
+}
+
 .camera-debug-title {
     color: #4a9eff;
     font-weight: bold;

@@ -55,10 +55,10 @@
 
     <!-- ======= INTERACTIVE 3D Viewer Section ======= -->
     <section id="orion3d" class="orion3d">
-      <div class="container-fluid" style="padding: 0;">
+      <div class="container-fluid" style="padding: 0; height: 100vh;">
         
         <!-- 3D Viewer Container - Full Width -->
-        <div id="canvas-container" style="width: 100%; height: 80vh; min-height: 600px; position: relative; margin-top: 20px;"></div>
+        <div id="canvas-container" style="width: 100%; height: 100vh; min-height: 0; position: relative; margin-top: 0;"></div>
         
         <!-- Indicator overlay (hidden by default) -->
         <div id="indicator-overlay" class="indicator-overlay hidden">
@@ -80,7 +80,7 @@
         </div>
 
         <!-- Camera Debug Info -->
-        <div id="camera-debug" class="camera-debug">
+        <div id="camera-debug" class="camera-debug hidden">
             <div class="camera-debug-title">Camera</div>
             <div id="camera-debug-content" class="camera-debug-content"></div>
         </div>
